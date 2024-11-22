@@ -1,97 +1,149 @@
 package servidor;
 
-import java.util.Random;
-import java.util.Set;
-import java.util.TreeSet;
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.*;
 
-/**
- * TODO: Complementa esta clase para que acepte conexiones TCP con clientes
- * para recibir un boleto, generar la respuesta y finalizar la sesion
- */
 public class ServidorTCP {
-	private String [] respuesta;
-	private int [] combinacion;
+	private String[] respuesta;
+	private int[] combinacionGanadora;
 	private int reintegro;
 	private int complementario;
+	private Socket socketCliente;
+	private ServerSocket socketServidor;
+	private BufferedReader entrada;
+	private PrintWriter salida;
 
 	/**
 	 * Constructor
 	 */
-	public ServidorTCP (int puerto) {
-		this.respuesta = new String [9];
-		this.respuesta[0] = "Boleto inv醠ido - N鷐eros repetidos";
-		this.respuesta[1] = "Boleto inv醠ido - n鷐eros incorretos (1-49)";
-		this.respuesta[2] = "6 aciertos";
-		this.respuesta[3] = "5 aciertos + complementario";
-		this.respuesta[4] = "5 aciertos";
-		this.respuesta[5] = "4 aciertos";
-		this.respuesta[6] = "3 aciertos";
-		this.respuesta[7] = "Reintegro";
-		this.respuesta[8] = "Sin premio";
+	public ServidorTCP(int puerto) {
+		try {
+			socketServidor = new ServerSocket(puerto);
+			System.out.println("Esperando conexi贸n del cliente...");
+			socketCliente = socketServidor.accept();
+			System.out.println("Cliente conectado.");
+			entrada = new BufferedReader(new InputStreamReader(socketCliente.getInputStream()));
+			salida = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socketCliente.getOutputStream())), true);
+		} catch (IOException e) {
+			System.out.println("Error al iniciar el servidor.");
+			System.exit(-1);
+		}
+
+		// Configurar respuestas
+		this.respuesta = new String[] { "Boleto inv谩lido - N煤meros repetidos",
+				"Boleto inv谩lido - n煤meros incorrectos (1-49)", "6 aciertos", "5 aciertos + complementario",
+				"5 aciertos", "4 aciertos", "3 aciertos", "Reintegro", "Sin premio" };
+
+		// Generar combinaci贸n ganadora
 		generarCombinacion();
 		imprimirCombinacion();
 	}
-	
-	
+
 	/**
-	 * @return Debe leer la combinacion de numeros que le envia el cliente
+	 * Leer combinaci贸n del cliente.
 	 */
-	public String leerCombinacion () {
-		String respuesta = "Sin hacer leer";
-		return respuesta;
-	}
-	
-	/**
-	 * @return Debe devolver una de las posibles respuestas configuradas
-	 */
-	public String comprobarBoleto () {
-		String respuesta = "Sin hacer comprobar";
-		return respuesta;
+	public String leerCombinacion() {
+		try {
+			return entrada.readLine();
+		} catch (IOException e) {
+			e.printStackTrace();
+			return null;
+		}
 	}
 
 	/**
-	 * @param respuesta se debe enviar al ciente
+	 * Evaluar el boleto recibido.
 	 */
-	public void enviarRespuesta (String respuesta) {
-		
-	}
-	
-	/**
-	 * Cierra el servidor
-	 */
-	public void finSesion () {
-		
-	}
-	
-	/**
-	 * Metodo que genera una combinacion. NO MODIFICAR
-	 */
-	private void generarCombinacion () {
-		Set <Integer> numeros = new TreeSet <Integer>();
-		Random aleatorio = new Random ();
-		while (numeros.size()<6) {
-			numeros.add(aleatorio.nextInt(49)+1);
+	public String comprobarBoleto(String boletoStr) {
+		try {
+			// Parsear el boleto
+			String[] numerosStr = boletoStr.replaceAll("[\\[\\]]", "").split(", ");
+			int[] boleto = Arrays.stream(numerosStr).mapToInt(Integer::parseInt).toArray();
+
+			// Validar n煤mero de elementos y rango
+			if (new HashSet<>(Arrays.asList(boleto)).size() != 6)
+				return respuesta[0]; // Repetidos
+			for (int num : boleto) {
+				if (num < 1 || num > 49)
+					return respuesta[1]; // Fuera de rango
+			}
+
+			// Contar aciertos
+			Set<Integer> numerosGanadores = new HashSet<>();
+			for (int num : combinacionGanadora)
+				numerosGanadores.add(num);
+
+			int aciertos = 0;
+			for (int num : boleto) {
+				if (numerosGanadores.contains(num))
+					aciertos++;
+			}
+
+			// Determinar premio
+			switch (aciertos) {
+			case 6:
+				return respuesta[2];
+			case 5:
+				return numerosGanadores.contains(complementario) ? respuesta[3] : respuesta[4];
+			case 4:
+				return respuesta[5];
+			case 3:
+				return respuesta[6];
+			default:
+				if (Arrays.asList(boleto).contains(reintegro))
+					return respuesta[7];
+				return respuesta[8];
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "Error al evaluar boleto.";
 		}
-		int i = 0;
-		this.combinacion = new int [6];
-		for (Integer elto : numeros) {
-			this.combinacion[i++]=elto;
-		}
-		this.reintegro = aleatorio.nextInt(49) + 1;
-		this.complementario = aleatorio.nextInt(49) + 1;
-	}
-	
-	/**
-	 * Metodo que saca por consola del servidor la combinacion
-	 */
-	private void imprimirCombinacion () {
-		System.out.print("Combinaci髇 ganadora: ");
-		for (Integer elto : this.combinacion) 
-			System.out.print(elto + " ");
-		System.out.println("");
-		System.out.println("Complementario:       " + this.complementario);
-		System.out.println("Reintegro:            " + this.reintegro);
 	}
 
+	/**
+	 * Enviar respuesta al cliente.
+	 */
+	public void enviarRespuesta(String respuesta) {
+		salida.println(respuesta);
+	}
+
+	/**
+	 * Finalizar el servidor.
+	 */
+	public void finSesion() {
+		try {
+			salida.close();
+			entrada.close();
+			socketCliente.close();
+			socketServidor.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println("-> Servidor terminado.");
+	}
+
+	/**
+	 * Generar combinaci贸n ganadora.
+	 */
+	private void generarCombinacion() {
+		Set<Integer> numeros = new HashSet<>();
+		Random random = new Random();
+		while (numeros.size() < 6) {
+			numeros.add(random.nextInt(49) + 1);
+		}
+		combinacionGanadora = numeros.stream().mapToInt(Integer::intValue).toArray();
+		reintegro = random.nextInt(49) + 1;
+		complementario = random.nextInt(49) + 1;
+	}
+
+	/**
+	 * Imprimir combinaci贸n ganadora en el servidor.
+	 */
+	private void imprimirCombinacion() {
+		System.out.println("Combinaci贸n ganadora: " + Arrays.toString(combinacionGanadora));
+		System.out.println("Complementario: " + complementario);
+		System.out.println("Reintegro: " + reintegro);
+	}
 }
-
